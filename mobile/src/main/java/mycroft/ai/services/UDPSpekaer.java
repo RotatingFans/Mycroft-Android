@@ -2,18 +2,13 @@ package mycroft.ai.services;
 
 import android.media.AudioFormat;
 import android.media.AudioManager;
-import android.media.AudioRecord;
 import android.media.AudioTrack;
-import android.media.MediaRecorder;
 import android.util.Log;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
+import java.net.SocketTimeoutException;
 
 public class UDPSpekaer {
 
@@ -47,58 +42,129 @@ public class UDPSpekaer {
             public void run() {
                 try {
 
-
-                    DatagramSocket serverSocket = new DatagramSocket(50005);
-
+                    DatagramSocket serverSocket = new DatagramSocket(50006);
+                    serverSocket.setSoTimeout(200);
 
 
                     // ( 1280 for 16 000Hz and 3584 for 44 100Hz (use AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat) to get the correct size)
 
 
                     while (status == true) {
-                        byte[] receiveData = new byte[4096];
-                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                        DatagramPacket receivePacket = new DatagramPacket(receiveData,
-                                receiveData.length);
-                        serverSocket.receive(receivePacket);
+                        try {
 
-                        receiveData = receivePacket.getData();
-                        if (new String(receiveData, 0, receivePacket.getLength()).equals("START")) {
+                            byte[] receiveData = new byte[4096];
+                            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                            DatagramPacket receivePacket = new DatagramPacket(receiveData,
+                                    receiveData.length);
                             serverSocket.receive(receivePacket);
 
                             receiveData = receivePacket.getData();
-                            sampleRate = Integer.valueOf(new String(receiveData, 0, receivePacket.getLength()));
-                            serverSocket.receive(receivePacket);
+                            String result = new String(receiveData, "ASCII");
 
-                            receiveData = receivePacket.getData();
-                            channels = Integer.valueOf(new String(receiveData, 0, receivePacket.getLength()));
-                            int format = AudioFormat.CHANNEL_OUT_MONO;
-                            if (channels == 2) {
-                                format = AudioFormat.CHANNEL_OUT_STEREO;
-                            }
-                            int intSize = android.media.AudioTrack.getMinBufferSize(sampleRate, format, AudioFormat.ENCODING_PCM_16BIT);
-                            System.out.println("Sample Rate " + sampleRate);
-                            AudioTrack at = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate, format, AudioFormat.ENCODING_PCM_16BIT, intSize, AudioTrack.MODE_STREAM);
-                            serverSocket.receive(receivePacket);
+                            if (result.contains("START")) {
+                                // serverSocket.receive(receivePacket);
 
-                            receiveData = receivePacket.getData();
-                            if (at != null) {
-                                // Write the byte array to the track
-                                while (!new String(receiveData, 0, receivePacket.getLength()).equals("END")) {
-                                    baos.write(receiveData);
+                                result = result.substring(result.indexOf("{") + 1, result.indexOf("}"));
+                                String[] data = result.split(",");
 
+                                sampleRate = Integer.valueOf(data[0].substring(4));
+                                channels = Integer.valueOf(data[1].substring(4));
 
-                                    serverSocket.receive(receivePacket);
+                                receivePacket.setData("STARTING".getBytes("ASCII"));
+                                serverSocket.send(receivePacket);
+                                int retries = 0;
 
-                                    receiveData = receivePacket.getData();
+                                while (new String(receiveData, "ASCII").contains("START") && retries < 10) {
+                                    receivePacket.setData("STARTING".getBytes("ASCII"));
+                                    serverSocket.send(receivePacket);
+                                    Thread.sleep(100);
+                                    try {
+                                        serverSocket.receive(receivePacket);
+
+                                        receiveData = receivePacket.getData();
+                                    } catch (SocketTimeoutException e) {
+                                        receiveData = new byte[4096];
+                                    }
+                                    retries++;
+
                                 }
-                                at.play();
-                                at.write(baos.toByteArray(), 0 , baos.toByteArray().length);
-                                at.stop();
-                                at.release();
-                            }
-                        }
 
+
+                                int format = AudioFormat.CHANNEL_OUT_MONO;
+                                if (channels == 2) {
+                                    format = AudioFormat.CHANNEL_OUT_STEREO;
+                                }
+                                int intSize = android.media.AudioTrack.getMinBufferSize(sampleRate, format, AudioFormat.ENCODING_PCM_16BIT);
+                                System.out.println("Sample Rate " + sampleRate);
+                                AudioTrack at = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate, format, AudioFormat.ENCODING_PCM_16BIT, intSize, AudioTrack.MODE_STREAM);
+                                receiveData = new byte[4096];
+
+                                receivePacket = new DatagramPacket(receiveData,
+                                        4096);
+                                serverSocket.receive(receivePacket);
+
+                                receiveData = receivePacket.getData();
+                                if (at != null) {
+                                    // Write the byte array to the track
+                                    int failures = 0;
+                                    while (failures < 3) {
+                                        baos.write(receiveData);
+
+                                        try {
+                                            serverSocket.receive(receivePacket);
+
+                                            receiveData = receivePacket.getData();
+                                            failures = 0;
+
+                                        } catch (SocketTimeoutException e) {
+                                            failures++;
+                                        }
+                                    }
+                                   /* while (!new String(receiveData, "ASCII").contains("END") & failures < 10) {
+                                        baos.write(receiveData);
+
+                                        try {
+                                            serverSocket.receive(receivePacket);
+
+                                            receiveData = receivePacket.getData();
+                                            failures = 0;
+
+                                        } catch (SocketTimeoutException e) {
+                                            failures++;
+                                        }
+                                    }
+                                    retries = 0;
+                                    while ((new String(receiveData, "ASCII").startsWith("END")) && retries < 10) {
+
+                                        System.out.println(new String(receiveData, "ASCII"));
+                                        receivePacket.setData("ENDING".getBytes("ASCII"));
+                                        serverSocket.send(receivePacket);
+                                        try {
+                                            serverSocket.receive(receivePacket);
+                                            Thread.sleep(100);
+                                            receiveData = receivePacket.getData();
+                                        } catch (SocketTimeoutException e) {
+                                            receiveData = new byte[4096];
+                                        }
+
+
+                                        retries++;
+                                    }
+                                    receivePacket.setData("ENDING".getBytes("ASCII"));
+                                    serverSocket.send(receivePacket);*/
+                                    at.play();
+                                    at.write(baos.toByteArray(), 0, baos.toByteArray().length);
+                                    at.stop();
+                                    at.release();
+                                }
+                            }
+
+
+                        } catch (SocketTimeoutException ignored) {
+
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
