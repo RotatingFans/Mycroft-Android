@@ -43,8 +43,9 @@ public class UDPSpekaer {
                 try {
 
                     DatagramSocket serverSocket = new DatagramSocket(50006);
-                    serverSocket.setSoTimeout(200);
-
+                    serverSocket.setSoTimeout(100);
+                    serverSocket.setReceiveBufferSize(327680);
+                    System.out.println(serverSocket.getReceiveBufferSize());
 
                     // ( 1280 for 16 000Hz and 3584 for 44 100Hz (use AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat) to get the correct size)
 
@@ -97,29 +98,35 @@ public class UDPSpekaer {
                                 int intSize = android.media.AudioTrack.getMinBufferSize(sampleRate, format, AudioFormat.ENCODING_PCM_16BIT);
                                 System.out.println("Sample Rate " + sampleRate);
                                 AudioTrack at = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate, format, AudioFormat.ENCODING_PCM_16BIT, intSize, AudioTrack.MODE_STREAM);
-                                receiveData = new byte[4096];
+                                receiveData = new byte[512];
 
                                 receivePacket = new DatagramPacket(receiveData,
-                                        4096);
+                                        receiveData.length);
                                 serverSocket.receive(receivePacket);
+                                System.out.println(serverSocket.getReceiveBufferSize());
 
                                 receiveData = receivePacket.getData();
+                                int packets = 0;
                                 if (at != null) {
                                     // Write the byte array to the track
                                     int failures = 0;
-                                    while (failures < 3) {
-                                        baos.write(receiveData);
+                                    at.play();
 
-                                        try {
+                                    while (!new String(receiveData, "ASCII").startsWith("START")) {
+
+
+                                        at.write(receiveData, 0, receiveData.length);
                                             serverSocket.receive(receivePacket);
+                                        //baos.write(receiveData);
+                                        //failures = 0;
+                                        //packets++;
 
-                                            receiveData = receivePacket.getData();
-                                            failures = 0;
-
-                                        } catch (SocketTimeoutException e) {
-                                            failures++;
-                                        }
                                     }
+                                    at.stop();
+                                    at.release();
+                                    System.out.println("Sent # packets: " + packets);
+                                    System.out.println(serverSocket.getReceiveBufferSize());
+
                                    /* while (!new String(receiveData, "ASCII").contains("END") & failures < 10) {
                                         baos.write(receiveData);
 
@@ -152,10 +159,7 @@ public class UDPSpekaer {
                                     }
                                     receivePacket.setData("ENDING".getBytes("ASCII"));
                                     serverSocket.send(receivePacket);*/
-                                    at.play();
-                                    at.write(baos.toByteArray(), 0, baos.toByteArray().length);
-                                    at.stop();
-                                    at.release();
+
                                 }
                             }
 
@@ -172,6 +176,7 @@ public class UDPSpekaer {
             }
 
         });
+        streamThread.setPriority(Thread.MAX_PRIORITY);
         streamThread.start();
     }
 
