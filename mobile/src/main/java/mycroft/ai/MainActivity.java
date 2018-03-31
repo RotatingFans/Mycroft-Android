@@ -68,6 +68,8 @@ import java.util.Locale;
 import io.fabric.sdk.android.Fabric;
 import mycroft.ai.adapters.MycroftAdapter;
 import mycroft.ai.receivers.NetworkChangeReceiver;
+import mycroft.ai.services.UDPMicListener;
+import mycroft.ai.services.UDPSpekaer;
 import mycroft.ai.shared.utilities.GuiUtilities;
 import mycroft.ai.shared.wear.Constants;
 import mycroft.ai.utils.NetworkUtil;
@@ -110,6 +112,8 @@ public class MainActivity extends AppCompatActivity  {
 
     boolean launchedFromWidget = false;
     boolean autoPromptForSpeech = false;
+    private UDPMicListener micLister;
+    private UDPSpekaer udpSpkr;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -409,6 +413,7 @@ public class MainActivity extends AppCompatActivity  {
         ttsManager.shutDown();
         isNetworkChangeReceiverRegistered = false;
         isWearBroadcastRevieverRegistered = false;
+        stopUDPStreaming();
     }
 
     @Override
@@ -419,8 +424,36 @@ public class MainActivity extends AppCompatActivity  {
         locationPermissionCheckAndSet();
         registerReceivers();
         checkIfLaunchedFromWidget(getIntent());
+        startUDPStreaming();
     }
+    private void startUDPStreaming(){
+        if (micLister == null) {
+            micLister = new UDPMicListener(wsip);
 
+        }
+        if (!micLister.getListening()){
+            micLister.startListener();
+
+        }
+        if (udpSpkr == null) {
+            udpSpkr = new UDPSpekaer();
+
+        }
+        if (!udpSpkr.getListening()){
+            udpSpkr.startListener();
+
+        }
+    }
+    private void stopUDPStreaming(){
+        if (micLister != null) {
+            micLister.stopListener();
+
+        }
+        if (udpSpkr != null) {
+            udpSpkr.stopListener();
+
+        }
+    }
     /**
      * For caching location permission state.
      */
